@@ -1,6 +1,7 @@
 from django.db import models
 from django.conf import settings
-from .models import AppointmentSlot
+from slots.models import AppointmentSlot
+import uuid
 
 class Booking(models.Model):
     id = models.CharField(max_length=50, primary_key=True, blank=False,  default=uuid.uuid4())

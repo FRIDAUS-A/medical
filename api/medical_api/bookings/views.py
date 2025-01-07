@@ -7,6 +7,22 @@ from .models import Booking, AppointmentSlot
 from .serializers import BookingSerializer
 from drf_yasg.utils import swagger_auto_schema
 
+
+from django.core.mail import send_mail
+from django.conf import settings
+
+def send_booking_confirmation_email(booking):
+    send_mail(
+        subject="Appointment Booking Confirmation",
+        message=f"Dear {booking.patient.firstName + ' ' + booking.patient.last_name},\n\nYour appointment with {booking.slot.doctor.first_name + '' + booking.slot.doctor.last_name} on {booking.slot.date} at {booking.slot.start_time} has been confirmed.",
+        from_email=settings.DEFAULT_FROM_EMAIL,
+        recipient_list=[booking.patient.email, booking.slot.doctor.email],
+    )
+
+# Inside perform_create
+# send_booking_confirmation_email(serializer.instance)
+
+
 class BookingView(APIView):
     """
     Handles booking creation, retrieval, and deletion.
@@ -37,6 +53,7 @@ class BookingView(APIView):
         serializer = BookingSerializer(data=request.data, context={'request': request})
         if serializer.is_valid():
             booking = serializer.save()
+            # send_booking_confirmation_email(serializer.instance)
             return Response(BookingSerializer(booking).data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 

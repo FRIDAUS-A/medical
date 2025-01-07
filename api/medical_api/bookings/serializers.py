@@ -1,5 +1,6 @@
 from rest_framework import serializers
 from .models import Booking, AppointmentSlot
+from .utils import create_zoom_meeting
 
 class BookingSerializer(serializers.ModelSerializer):
     slot_id = serializers.UUIDField(write_only=True)
@@ -21,5 +22,6 @@ class BookingSerializer(serializers.ModelSerializer):
         validated_data['slot'] = slot
         validated_data['patient'] = self.context['request'].user
         slot.is_booked = True  # Mark the slot as booked
+        slot.video_link = create_zoom_meeting(slot.doctor.first_name + ' ' + slot.doctor.last_name)
         slot.save()
         return super().create(validated_data)

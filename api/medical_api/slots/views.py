@@ -3,28 +3,27 @@ from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 from django.utils.timezone import now
+from django.shortcuts import get_object_or_404
 from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
 from .models import AppointmentSlot
 from .serializers import AppointmentSlotSerializer
 from .permissions import IsDoctor, IsPatient
 
-class AppointmentSlotView(APIView):
+
+class AppointmentSlotListView(APIView):
     """
-    Handles appointment slots:
-    - Doctors can create and manage their slots.
-    - Patients can view available slots for booking.
+    Handles listing and creating appointment slots:
+    - Patients can view available slots.
+    - Doctors can create new slots.
     """
     permission_classes = [IsAuthenticated]
 
     def get_permissions(self):
-        """
-        Assign permissions based on the action.
-        """
         if self.request.method == "POST":
             self.permission_classes = [IsAuthenticated, IsDoctor]
         elif self.request.method == "GET":
-            self.permission_classes = [IsAuthenticated, IsDoctor]
+            self.permission_classes = [IsAuthenticated, IsPatient]
         return super().get_permissions()
 
     @swagger_auto_schema(
@@ -44,16 +43,12 @@ class AppointmentSlotView(APIView):
     )
     def get(self, request):
         """
-        List all available appointment slots (for patients).
-        Filters:
-        - By date
-        - By specialty
-        - By doctor
+        List all available appointment slots.
         """
         date = request.query_params.get('date')  # e.g., 2025-01-01
         specialty = request.query_params.get('specialty')  # e.g., 'cardiology'
         doctor = request.query_params.get('doctor')  # Doctor's ID
-        
+
         slots = AppointmentSlot.objects.filter(is_booked=False, date__gte=now().date())
 
         # Apply filters
@@ -70,10 +65,7 @@ class AppointmentSlotView(APIView):
     @swagger_auto_schema(
         operation_description="Create an appointment slot (for doctors).",
         request_body=AppointmentSlotSerializer,
-        responses={
-            201: AppointmentSlotSerializer,
-            400: "Bad Request - Invalid data."
-        }
+        responses={201: AppointmentSlotSerializer, 400: "Bad Request"}
     )
     def post(self, request):
         """
@@ -85,36 +77,58 @@ class AppointmentSlotView(APIView):
             return Response(serializer.data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-class UpdateAppointmentSlotView(APIView):
+
+class AppointmentSlotDetailView(APIView):
     """
-    Allows doctors to update their existing appointment slots.
+    Handles individual appointment slots:
+    - Retrieve details for a specific slot.
+    - Update or delete a slot (for doctors).
     """
-    permission_classes = [IsAuthenticated, IsDoctor]
+    permission_classes = [IsAuthenticated]
+
+    def get_permissions(self):
+        if self.request.method in ["PUT", "DELETE"]:
+            self.permission_classes = [IsAuthenticated, IsDoctor]
+        else:
+            self.permission_classes = [IsAuthenticated]
+        return super().get_permissions()
+
     @swagger_auto_schema(
-        operation_description="Update an appointment slot. Only the doctor who created the slot can update it.",
+        operation_description="Retrieve an appointment slot by ID.",
+        responses={200: AppointmentSlotSerializer, 404: "Slot not found"}
+    )
+    def get(self, request, slot_id):
+        """
+        Retrieve details of a specific appointment slot.
+        """
+        slot = get_object_or_404(AppointmentSlot, id=slot_id)
+        serializer = AppointmentSlotSerializer(slot)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    @swagger_auto_schema(
+        operation_description="Update an appointment slot by ID (for doctors).",
         request_body=AppointmentSlotSerializer,
-        responses={
-            200: AppointmentSlotSerializer,
-            400: "Bad Request",
-            404: "Slot not found or unauthorized",
-        },
+        responses={200: AppointmentSlotSerializer, 400: "Bad Request", 404: "Slot not found"}
     )
     def put(self, request, slot_id):
         """
-        Update an existing appointment slot.
+        Update a specific appointment slot (for doctors).
         """
-        try:
-            # Fetch the slot
-            slot = AppointmentSlot.objects.get(id=slot_id, doctor=request.user)
-        except AppointmentSlot.DoesNotExist:
-            return Response(
-                {"detail": "Appointment slot not found or unauthorized access."},
-                status=status.HTTP_404_NOT_FOUND,
-            )
-
-        # Serialize and validate the data
+        slot = get_object_or_404(AppointmentSlot, id=slot_id, doctor=request.user)
         serializer = AppointmentSlotSerializer(slot, data=request.data, partial=True)
         if serializer.is_valid():
             serializer.save()
             return Response(serializer.data, status=status.HTTP_200_OK)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    @swagger_auto_schema(
+        operation_description="Delete an appointment slot by ID (for doctors).",
+        responses={204: "Slot deleted successfully", 404: "Slot not found"}
+    )
+    def delete(self, request, slot_id):
+        """
+        Delete a specific appointment slot (for doctors).
+        """
+        slot = get_object_or_404(AppointmentSlot, id=slot_id, doctor=request.user)
+        slot.delete()
+        return Response({"detail": "Slot deleted successfully"}, status=status.HTTP_204_NO_CONTENT)
